@@ -1,0 +1,29 @@
+# Entorno virtual
+venv/
+ENV/
+env/
+.venv/
+
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Archivos de Jupyter
+.ipynb_checkpoints/
+
+# Configuración local
+*.sqlite
+*.db
+.env
+*.log
+
+# Datos
+data/raw/*
+data/processed/*
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
