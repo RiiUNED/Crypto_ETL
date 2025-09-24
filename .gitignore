@@ -27,3 +27,6 @@ data/processed/*
 # Archivos del sistema
 .DS_Store
 Thumbs.db
+
+# Notas locales (no subir a GitHub)
+readme_notes.txt*
