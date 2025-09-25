@@ -50,31 +50,49 @@ def fetch_market_chart(coin_id, days=30, vs_currency="eur"):
 def save_json(obj, name, snapshot_id):
     """Guarda un objeto JSON en disco con snapshot_id + timestamp."""
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    fp = RAW_DIR / f"{snapshot_id}_{ts}_{name}.json"
+    filename = f"{snapshot_id}_{ts}_{name}.json"
+    fp = RAW_DIR / filename
     with open(fp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
     print(f"Guardado: {fp}")
+    return str(fp.name)
 
 def main():
-    wait_time = 30  # segundos entre peticiones para respetar rate limit
+    wait_time = 15  # segundos entre peticiones para respetar rate limit
 
     # Crear snapshot_id único al inicio
     snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     print(f"=== SNAPSHOT ID: {snapshot_id} ===")
 
+    metadata = {
+        "snapshot_id": snapshot_id,
+        "ts_start": datetime.now(timezone.utc).isoformat(),
+        "coins": [],
+        "files": []
+    }
+
     # Descargar snapshot de markets en EUR
     markets = fetch_markets(vs_currency="eur", per_page=10, page=1)
-    save_json(markets, "coins_markets", snapshot_id)
+    fname = save_json(markets, "coins_markets", snapshot_id)
+    metadata["files"].append(fname)
 
     # Seleccionar top 5 por capitalización
     top5 = [coin["id"] for coin in markets[:5]]
+    metadata["coins"] = top5
     print("Top 5 monedas:", top5)
 
     # Descargar histórico de esas monedas
     for coin_id in top5:
         chart = fetch_market_chart(coin_id, days=60, vs_currency="eur")
-        save_json(chart, f"{coin_id}_market_chart", snapshot_id)
+        fname = save_json(chart, f"{coin_id}_market_chart", snapshot_id)
+        metadata["files"].append(fname)
         time.sleep(wait_time)  # Respetar rate limit
+
+    # Guardar metadatos del snapshot
+    meta_file = RAW_DIR / f"snapshot_{snapshot_id}.json"
+    with open(meta_file, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+    print(f"Metadatos guardados en: {meta_file}")
 
 if __name__ == "__main__":
     main()
