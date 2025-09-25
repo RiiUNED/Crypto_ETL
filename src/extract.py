@@ -16,7 +16,7 @@ RAW_DIR.mkdir(parents=True, exist_ok=True)
 
 BASE_URL = "https://api.coingecko.com/api/v3"
 
-def robust_get(url, params=None, max_attempts=5, base_wait=5):
+def robust_get(url, params=None, max_attempts=10, base_wait=5):
     """Hace una petición GET con reintentos en caso de 429 (rate limit)."""
     for attempt in range(max_attempts):
         resp = requests.get(url, params=params, timeout=30)
@@ -56,7 +56,7 @@ def save_json(obj, name):
     print(f"Guardado: {fp}")
 
 def main():
-    wait_time = 5  # segundos entre peticiones para respetar rate limit
+    wait_time = 30  # segundos entre peticiones para respetar rate limit
 
     # Descargar snapshot de markets en EUR
     markets = fetch_markets(vs_currency="eur", per_page=10, page=1)
