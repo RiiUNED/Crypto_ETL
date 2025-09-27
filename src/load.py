@@ -64,9 +64,23 @@ def load_snapshots(conn):
     snaps = sorted(PROC_DIR.glob("market_snapshots_*.csv"))
     if not snaps:
         return
-    latest = pd.read_csv(snaps[-1])
-    latest.to_sql("market_snapshots", conn, if_exists="append", index=False)
-    print(f"Insertados {len(latest)} registros en market_snapshots ({snaps[-1].name})")
+    latest_file = snaps[-1]
+    latest = pd.read_csv(latest_file)
+
+    # Comprobar si el snapshot ya existe
+    snapshot_id = latest["snapshot_id"].iloc[0]
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT 1 FROM market_snapshots WHERE snapshot_id = ? LIMIT 1",
+        (snapshot_id,)
+    )
+    exists = cur.fetchone()
+
+    if exists:
+        print(f"Snapshot {snapshot_id} ya cargado, se omite.")
+    else:
+        latest.to_sql("market_snapshots", conn, if_exists="append", index=False)
+        print(f"Insertados {len(latest)} registros en market_snapshots ({latest_file.name})")
 
 def load_history(conn):
     hists = sorted(PROC_DIR.glob("market_history_*.csv"))
