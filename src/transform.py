@@ -27,31 +27,36 @@ def transform_snapshot(snapshot_file):
     # Filtrar solo las monedas del top 5
     markets = [coin for coin in markets if coin["id"] in top5]
 
-    rows = []
+    # Construir filas sin duplicar datos de coins
+    rows_snapshots = []
+    rows_coins = []
     for coin in markets:
-        row = {
+        # Fila para snapshot
+        rows_snapshots.append({
             "snapshot_id": snapshot_id,
             "coin_id": coin["id"],
-            "symbol": coin["symbol"],
-            "name": coin["name"],
             "price_eur": coin["current_price"],
             "market_cap": coin["market_cap"],
             "volume_24h": coin["total_volume"],
             "rank": coin["market_cap_rank"],
             "last_updated": coin["last_updated"]
-        }
-        rows.append(row)
+        })
+        # Fila para coins
+        rows_coins.append({
+            "coin_id": coin["id"],
+            "symbol": coin["symbol"],
+            "name": coin["name"]
+        })
 
-    df_snapshots = pd.DataFrame(rows)
-
+    # Guardar market_snapshots
+    df_snapshots = pd.DataFrame(rows_snapshots)
     out_snap = PROC_DIR / f"market_snapshots_{snapshot_id}.csv"
     df_snapshots.to_csv(out_snap, index=False)
     print(f"Guardado: {out_snap}")
 
-    # === Opcional: tabla coins de referencia (solo top 5 acumulados) ===
+    # Actualizar coins.csv (sin duplicados)
     coins_file = PROC_DIR / "coins.csv"
-    df_coins = df_snapshots[["coin_id", "symbol", "name"]].drop_duplicates()
-
+    df_coins = pd.DataFrame(rows_coins).drop_duplicates()
     if coins_file.exists():
         df_existing = pd.read_csv(coins_file)
         df_coins = pd.concat([df_existing, df_coins]).drop_duplicates()
@@ -63,7 +68,6 @@ def transform_snapshot(snapshot_file):
     for fname in meta["files"]:
         if "market_chart" not in fname:
             continue
-        # ejemplo de fname: 20250924T131500Z_20250924T131503Z_bitcoin_market_chart.json
         coin_id = fname.split("_")[2]
         with open(RAW_DIR / fname, "r", encoding="utf-8") as f:
             chart = json.load(f)
@@ -84,7 +88,6 @@ def transform_snapshot(snapshot_file):
     print(f"Guardado: {out_hist}")
 
 if __name__ == "__main__":
-    # Tomar el snapshot más reciente en data/raw/
     latest_meta = sorted(RAW_DIR.glob("snapshot_*.json"))[-1]
     print(f"Procesando snapshot: {latest_meta}")
     transform_snapshot(latest_meta)
