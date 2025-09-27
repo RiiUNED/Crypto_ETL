@@ -9,7 +9,9 @@ import pandas as pd
 import pathlib
 
 PROC_DIR = pathlib.Path(__file__).resolve().parents[1] / "data" / "processed"
-DB_FILE = pathlib.Path(__file__).resolve().parents[1] / "crypto.sqlite"
+DB_DIR = pathlib.Path(__file__).resolve().parents[1] / "db"
+DB_DIR.mkdir(exist_ok=True)
+DB_FILE = DB_DIR / "crypto.sqlite"
 
 def create_tables(conn):
     cur = conn.cursor()
