@@ -30,3 +30,7 @@ Thumbs.db
 
 # Notas locales (no subir a GitHub)
 readme_notes.txt*
+
+# Analisis
+analysis/plots/*
+analysis/*.csv

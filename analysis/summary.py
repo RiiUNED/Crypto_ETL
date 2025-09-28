@@ -46,6 +46,10 @@ def main():
     print("\n=== Estadísticas por moneda ===")
     print(result)
 
+    # Guardar en CSV
+    result.to_csv(OUT_FILE, index=True)
+    print(f"\nResultados guardados en: {OUT_FILE}")
+
     conn.close()
 
 if __name__ == "__main__":
