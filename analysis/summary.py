@@ -1,27 +1,33 @@
 #!/usr/bin/env python3
 """
-Análisis exploratorio básico de la base de datos crypto.sqlite.
-Calcula estadísticas descriptivas por moneda (media, varianza, desviación estándar, crecimiento, rango temporal).
-Incluye volatilidad relativa (coeficiente de variación).
+Exploratory analysis of the PostgreSQL crypto database.
+Computes descriptive statistics per coin (mean, variance, stddev, growth, time range).
+Includes relative volatility (coefficient of variation).
 """
 
-import sqlite3
 import pandas as pd
 import pathlib
+from sqlalchemy import create_engine
 
-# Rutas
+# Paths
 BASE_DIR = pathlib.Path(__file__).resolve().parents[1]
-DB_FILE = BASE_DIR / "db" / "crypto.sqlite"
 OUT_FILE = BASE_DIR / "analysis" / "summary_stats.csv"
 
+# PostgreSQL connection config
+DB_USER = "ricardo"
+DB_PASS = "crypto"
+DB_HOST = "localhost"
+DB_PORT = "5432"
+DB_NAME = "crypto"
+
+engine = create_engine(f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
+
 def main():
-    # Conectar a la base de datos
-    conn = sqlite3.connect(DB_FILE)
+    # Load historical data into pandas
+    query = "SELECT coin_id, ts, price_eur FROM market_history"
+    df = pd.read_sql(query, engine)
 
-    # Cargar históricos en pandas
-    df = pd.read_sql("SELECT coin_id, ts, price_eur FROM market_history", conn)
-
-    # Calcular métricas por moneda
+    # Calculate metrics per coin
     stats = df.groupby("coin_id")["price_eur"].agg(
         avg_price="mean",
         variance="var",
@@ -30,27 +36,26 @@ def main():
         max_price="max"
     )
 
-    # Crecimiento porcentual
+    # Percentage growth
     stats["pct_growth"] = (stats["max_price"] - stats["min_price"]) / stats["min_price"] * 100
 
-    # Volatilidad relativa (coeficiente de variación)
+    # Relative volatility (coefficient of variation)
     stats["rel_volatility_pct"] = (stats["stddev"] / stats["avg_price"]) * 100
 
-    # Rango temporal
+    # Time range
     ranges = df.groupby("coin_id")["ts"].agg(start_date="min", end_date="max")
 
-    # Unir métricas y rangos
+    # Merge metrics and ranges
     result = stats.join(ranges)
 
-    # Mostrar en consola
-    print("\n=== Estadísticas por moneda ===")
+    # Show in console
+    print("\n=== Statistics per coin ===")
     print(result)
 
-    # Guardar en CSV
+    # Save to CSV
+    OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     result.to_csv(OUT_FILE, index=True)
-    print(f"\nResultados guardados en: {OUT_FILE}")
-
-    conn.close()
+    print(f"\nResults saved in: {OUT_FILE}")
 
 if __name__ == "__main__":
     main()
