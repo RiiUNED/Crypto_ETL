@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Carga los CSV de data/processed/ en una base de datos PostgreSQL.
-Evita duplicados en market_history: solo inserta días nuevos.
+load.py
+Loads processed datasets (Parquet preferred, CSV fallback) into PostgreSQL.
+Assumes data is already clean (timestamps normalized, types correct).
 """
 
 import pandas as pd
@@ -10,7 +11,7 @@ from sqlalchemy import create_engine, text
 
 PROC_DIR = pathlib.Path(__file__).resolve().parents[1] / "data" / "processed"
 
-# Configuración conexión PostgreSQL
+# PostgreSQL connection config
 DB_USER = "ricardo"
 DB_PASS = "crypto"
 DB_HOST = "localhost"
@@ -19,30 +20,51 @@ DB_NAME = "crypto"
 
 engine = create_engine(f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
 
+# --- Helpers ---
+def read_processed(prefix: str):
+    """Read latest dataset: prefer Parquet, fallback to CSV."""
+    pq_files = sorted(PROC_DIR.glob(f"{prefix}_*.parquet"))
+    csv_files = sorted(PROC_DIR.glob(f"{prefix}_*.csv"))
+
+    if pq_files:
+        return pd.read_parquet(pq_files[-1]), pq_files[-1].name
+    elif csv_files:
+        return pd.read_csv(csv_files[-1]), csv_files[-1].name
+    else:
+        return None, None
+
+# --- Load functions ---
 def load_coins(engine):
-    coins_file = PROC_DIR / "coins.csv"
-    if coins_file.exists():
-        df = pd.read_csv(coins_file)
-        with engine.begin() as conn:
-            for _, row in df.iterrows():
-                conn.execute(
-                    text("""
-                        INSERT INTO coins (coin_id, symbol, name)
-                        VALUES (:coin_id, :symbol, :name)
-                        ON CONFLICT (coin_id) DO NOTHING
-                    """),
-                    {"coin_id": row["coin_id"], "symbol": row["symbol"], "name": row["name"]}
-                )
-        print(f"Insertadas/actualizadas {len(df)} monedas en coins")
+    coins_file_pq = PROC_DIR / "coins.parquet"
+    coins_file_csv = PROC_DIR / "coins.csv"
+
+    if coins_file_pq.exists():
+        df = pd.read_parquet(coins_file_pq)
+        src = coins_file_pq.name
+    elif coins_file_csv.exists():
+        df = pd.read_csv(coins_file_csv)
+        src = coins_file_csv.name
+    else:
+        return
+
+    with engine.begin() as conn:
+        for _, row in df.iterrows():
+            conn.execute(
+                text("""
+                    INSERT INTO coins (coin_id, symbol, name)
+                    VALUES (:coin_id, :symbol, :name)
+                    ON CONFLICT (coin_id) DO NOTHING
+                """),
+                {"coin_id": row["coin_id"], "symbol": row["symbol"], "name": row["name"]}
+            )
+    print(f"Inserted/updated {len(df)} coins from {src}")
 
 def load_snapshots(engine):
-    snaps = sorted(PROC_DIR.glob("market_snapshots_*.csv"))
-    if not snaps:
+    df, fname = read_processed("market_snapshots")
+    if df is None:
         return
-    latest_file = snaps[-1]
-    latest = pd.read_csv(latest_file)
 
-    snapshot_id = latest["snapshot_id"].iloc[0]
+    snapshot_id = df["snapshot_id"].iloc[0]
     with engine.begin() as conn:
         exists = conn.execute(
             text("SELECT 1 FROM market_snapshots WHERE snapshot_id = :sid LIMIT 1"),
@@ -50,21 +72,17 @@ def load_snapshots(engine):
         ).fetchone()
 
         if exists:
-            print(f"Snapshot {snapshot_id} ya cargado, se omite.")
+            print(f"Snapshot {snapshot_id} already loaded, skipped.")
         else:
-            latest.to_sql("market_snapshots", engine, if_exists="append", index=False)
-            print(f"Insertados {len(latest)} registros en market_snapshots ({latest_file.name})")
+            df.to_sql("market_snapshots", engine, if_exists="append", index=False)
+            print(f"Inserted {len(df)} rows into market_snapshots ({fname})")
 
 def load_history(engine):
-    hists = sorted(PROC_DIR.glob("market_history_*.csv"))
-    if not hists:
+    df, fname = read_processed("market_history")
+    if df is None:
         return
-    latest_file = hists[-1]
-    df = pd.read_csv(latest_file)
-    df["ts"] = pd.to_datetime(df["ts"], format="ISO8601", errors="coerce")
-    df["ts"] = df["ts"].dt.tz_convert("UTC").dt.tz_localize(None)
-    inserted_total = 0
 
+    inserted_total = 0
     with engine.begin() as conn:
         for coin_id, group in df.groupby("coin_id"):
             result = conn.execute(
@@ -80,8 +98,9 @@ def load_history(engine):
                 group.to_sql("market_history", engine, if_exists="append", index=False)
                 inserted_total += len(group)
 
-    print(f"Insertados {inserted_total} registros nuevos en market_history ({latest_file.name})")
+    print(f"Inserted {inserted_total} new rows into market_history ({fname})")
 
+# --- Main ---
 def main():
     load_coins(engine)
     load_snapshots(engine)

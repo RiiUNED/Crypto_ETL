@@ -29,6 +29,7 @@ numpy==1.24.4
     #   contourpy
     #   matplotlib
     #   pandas
+    #   pyarrow
 packaging==25.0
     # via matplotlib
 pandas==2.0.3
@@ -36,6 +37,8 @@ pandas==2.0.3
 pillow==10.4.0
     # via matplotlib
 psycopg2-binary==2.9.10
+    # via -r requirements.in
+pyarrow==17.0.0
     # via -r requirements.in
 pyparsing==3.1.4
     # via matplotlib

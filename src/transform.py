@@ -1,93 +1,108 @@
 #!/usr/bin/env python3
 """
-Transforma datos crudos de CoinGecko (JSON en data/raw/)
-a datos procesados (CSV en data/processed/).
+transform.py
+Transforms extracted JSON files into clean tabular datasets.
+
+Reads the latest snapshot metadata (snapshot_*.json) and generates:
+- coins.csv / coins.parquet (accumulated metadata)
+- market_snapshots_<snapshot_id>.csv / .parquet
+- market_history_<snapshot_id>.csv / .parquet
 """
 
-import json
-import pathlib
 import pandas as pd
+import pathlib
+import json
 
-RAW_DIR = pathlib.Path(__file__).resolve().parents[1] / "data" / "raw"
-PROC_DIR = pathlib.Path(__file__).resolve().parents[1] / "data" / "processed"
-PROC_DIR.mkdir(parents=True, exist_ok=True)
+# Paths
+BASE_DIR = pathlib.Path(__file__).resolve().parents[1]
+RAW_DIR = BASE_DIR / "data" / "raw"
+PROCESSED_DIR = BASE_DIR / "data" / "processed"
+PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-def transform_snapshot(snapshot_file):
-    # Cargar metadatos
+def latest_snapshot():
+    """Get the most recent snapshot metadata file."""
+    snapshots = sorted(RAW_DIR.glob("snapshot_*.json"))
+    if not snapshots:
+        raise FileNotFoundError("No snapshot metadata found in data/raw/")
+    return snapshots[-1]
+
+def transform(snapshot_file):
+    # Load snapshot metadata
     with open(snapshot_file, "r", encoding="utf-8") as f:
         meta = json.load(f)
+
     snapshot_id = meta["snapshot_id"]
-    top5 = set(meta["coins"])  # monedas a conservar
+    top5 = set(meta["coins"])
 
-    # === Transformar coins_markets → market_snapshots ===
+    # --- Market snapshots & coins ---
     markets_file = [f for f in meta["files"] if "coins_markets" in f][0]
-    with open(RAW_DIR / markets_file, "r", encoding="utf-8") as f:
-        markets = json.load(f)
+    markets = pd.read_json(RAW_DIR / markets_file)
 
-    # Filtrar solo las monedas del top 5
-    markets = [coin for coin in markets if coin["id"] in top5]
+    # Keep only top 5 coins
+    markets = markets[markets["id"].isin(top5)]
 
-    # Construir filas sin duplicar datos de coins
-    rows_snapshots = []
-    rows_coins = []
-    for coin in markets:
-        # Fila para snapshot
-        rows_snapshots.append({
-            "snapshot_id": snapshot_id,
-            "coin_id": coin["id"],
-            "price_eur": coin["current_price"],
-            "market_cap": coin["market_cap"],
-            "volume_24h": coin["total_volume"],
-            "rank": coin["market_cap_rank"],
-            "last_updated": coin["last_updated"]
-        })
-        # Fila para coins
-        rows_coins.append({
-            "coin_id": coin["id"],
-            "symbol": coin["symbol"],
-            "name": coin["name"]
-        })
+    # Build market_snapshots dataframe
+    df_snap = markets.rename(
+        columns={
+            "id": "coin_id",
+            "current_price": "price_eur",
+            "market_cap": "market_cap",
+            "total_volume": "volume_24h",
+            "market_cap_rank": "rank",
+            "last_updated": "last_updated",
+        }
+    )[["coin_id", "price_eur", "market_cap", "volume_24h", "rank", "last_updated"]]
+    df_snap.insert(0, "snapshot_id", snapshot_id)
 
-    # Guardar market_snapshots
-    df_snapshots = pd.DataFrame(rows_snapshots)
-    out_snap = PROC_DIR / f"market_snapshots_{snapshot_id}.csv"
-    df_snapshots.to_csv(out_snap, index=False)
-    print(f"Guardado: {out_snap}")
+    # Save market_snapshots CSV + Parquet
+    snap_csv = PROCESSED_DIR / f"market_snapshots_{snapshot_id}.csv"
+    snap_pq = PROCESSED_DIR / f"market_snapshots_{snapshot_id}.parquet"
+    df_snap.to_csv(snap_csv, index=False)
+    df_snap.to_parquet(snap_pq, index=False)
+    print(f"Saved {len(df_snap)} market_snapshots → {snap_csv.name}, {snap_pq.name}")
 
-    # Actualizar coins.csv (sin duplicados)
-    coins_file = PROC_DIR / "coins.csv"
-    df_coins = pd.DataFrame(rows_coins).drop_duplicates()
-    if coins_file.exists():
-        df_existing = pd.read_csv(coins_file)
-        df_coins = pd.concat([df_existing, df_coins]).drop_duplicates()
-    df_coins.to_csv(coins_file, index=False)
-    print(f"Guardado: {coins_file}")
+    # Build/update coins dataframe
+    df_coins = markets[["id", "symbol", "name"]].rename(columns={"id": "coin_id"})
+    coins_csv = PROCESSED_DIR / "coins.csv"
+    coins_pq = PROCESSED_DIR / "coins.parquet"
 
-    # === Transformar históricos → market_history ===
+    if coins_csv.exists():
+        existing = pd.read_csv(coins_csv)
+        df_coins = pd.concat([existing, df_coins]).drop_duplicates("coin_id", keep="last")
+
+    df_coins.to_csv(coins_csv, index=False)
+    df_coins.to_parquet(coins_pq, index=False)
+    print(f"Saved {len(df_coins)} coins → {coins_csv.name}, {coins_pq.name}")
+
+    # --- Market history ---
     dfs = []
     for fname in meta["files"]:
-        if "market_chart" not in fname:
-            continue
-        coin_id = fname.split("_")[2]
-        with open(RAW_DIR / fname, "r", encoding="utf-8") as f:
-            chart = json.load(f)
+        if "market_chart" in fname:
+            coin_id = fname.split("_market_chart.json")[0].split("_")[-1]
+            df_raw = pd.read_json(RAW_DIR / fname)
 
-        df = pd.DataFrame({
-            "ts": [pd.to_datetime(x[0], unit="ms", utc=True) for x in chart["prices"]],
-            "price_eur": [x[1] for x in chart["prices"]],
-            "market_cap": [x[1] for x in chart["market_caps"]],
-            "volume_24h": [x[1] for x in chart["total_volumes"]],
-        })
-        df["coin_id"] = coin_id
-        df["snapshot_id"] = snapshot_id
-        dfs.append(df)
+            df_hist = pd.DataFrame({
+                "ts": [pd.to_datetime(x[0], unit="ms", utc=True).tz_convert(None) for x in df_raw["prices"]],
+                "price_eur": [x[1] for x in df_raw["prices"]],
+                "market_cap": [x[1] for x in df_raw["market_caps"]],
+                "volume_24h": [x[1] for x in df_raw["total_volumes"]],
+            })
+            df_hist.insert(0, "coin_id", coin_id)
+            df_hist["snapshot_id"] = snapshot_id
+            dfs.append(df_hist)
 
     df_history = pd.concat(dfs, ignore_index=True)
-    out_hist = PROC_DIR / f"market_history_{snapshot_id}.csv"
-    df_history.to_csv(out_hist, index=False)
-    print(f"Guardado: {out_hist}")
+
+    hist_csv = PROCESSED_DIR / f"market_history_{snapshot_id}.csv"
+    hist_pq = PROCESSED_DIR / f"market_history_{snapshot_id}.parquet"
+
+    df_history.to_csv(hist_csv, index=False)
+    df_history.to_parquet(hist_pq, index=False)
+    print(f"Saved {len(df_history)} market_history → {hist_csv.name}, {hist_pq.name}")
+
+def main():
+    snapshot_file = latest_snapshot()
+    transform(snapshot_file)
 
 if __name__ == "__main__":
-    latest_meta = sorted(RAW_DIR.glob("snapshot_*.json"))[-1]
-    print(f"Procesando snapshot: {latest_meta}")
-    transform_snapshot(latest_meta)
+    main()
