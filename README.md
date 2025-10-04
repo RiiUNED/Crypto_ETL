@@ -33,7 +33,7 @@ crypto_etl/
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/RiiUNED/crypto_etl.git
+git clone https://github.com/RiiUNED/Crypto_ETL.git
 cd crypto_etl
 ```
 
