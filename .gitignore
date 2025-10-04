@@ -34,3 +34,6 @@ readme_notes.txt*
 # Analisis
 analysis/plots/*
 analysis/*.csv
+
+# Jupyter
+.ipynb_checkpoints/
