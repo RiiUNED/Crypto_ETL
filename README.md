@@ -8,24 +8,40 @@ This project implements a complete **ETL pipeline** for cryptocurrency data usin
 - **Load**: store the processed data in **PostgreSQL** (migrated from the initial prototype in SQLite).  
 - **Consume**:  
   - Interactive **Streamlit dashboard** (`dashboard/`) connected live to PostgreSQL.  
-  - Classic **Python analysis scripts** (`analysis/`) for exploratory work.  
+  - Classic **Python analysis scripts** (`analysis/`) for exploratory work and visualization.  
+  - Automated **backup system** for both database and processed data.  
 
 ---
 
 ## Repository Structure
 ```
 crypto_etl/
-├── src/              # ETL scripts (extract, transform, load)
+├── src/              # ETL logic: extract, transform, and load data
 ├── data/
 │   ├── raw/          # Raw JSON files from CoinGecko API
-│   └── processed/    # Cleaned data (CSV + Parquet)
-├── analysis/         # Analysis scripts (summary.py, charts.py)
-├── dashboard/        # Streamlit app (app.py + queries page)
-├── notebooks/        # Jupyter storytelling notebook
+│   └── processed/    # Cleaned datasets in CSV and Parquet formats
+├── analysis/         # Statistical summaries and plots
+│   └── plots/        # Generated visualizations
+├── dashboard/        # Streamlit application connected to PostgreSQL
+├── notebooks/        # Jupyter storytelling and exploratory notebooks
+├── backup/           # Backup system for database and processed data
+│   ├── db/           # Compressed database backups (.sql.gz)
+│   └── data/         # Compressed data backups (.tar.gz)
 ├── requirements.in   # Base dependencies
 ├── requirements.txt  # Locked dependencies
 └── README.md         # Project documentation
 ```
+
+---
+
+### Folder overview
+
+- **`src/`** – Contains all ETL scripts (`extract`, `transform`, `load`) that collect, process, and load cryptocurrency data into the database.  
+- **`data/`** – Stores both raw API responses and processed data outputs in CSV and Parquet formats.  
+- **`analysis/`** – Contains analysis modules that perform statistical summaries and generate plots, stored in `/plots/`.  
+- **`dashboard/`** – Interactive Streamlit web app that visualizes live data from PostgreSQL.  
+- **`notebooks/`** – Jupyter notebooks used for storytelling, demonstrations, and step-by-step explanations.  
+- **`backup/`** – Scripts and directories for creating compressed backups of the database and processed data.  
 
 ---
 
@@ -59,25 +75,32 @@ psql -U postgres -c "CREATE DATABASE crypto OWNER ricardo;"
 
 ## Usage
 
-### Extract raw data
+### Run the full ETL pipeline (extract → transform → load)
 ```bash
-python src/extract.py
+./src/run_pipeline.sh
 ```
+This script sequentially executes:
+- `extract.py` – downloads raw data from CoinGecko  
+- `transform.py` – cleans and structures the data (CSV + Parquet)  
+- `load.py` – loads the processed data into PostgreSQL  
 
-### Transform raw → processed (CSV & Parquet)
-```bash
-python src/transform.py
-```
+---
 
-### Load into PostgreSQL
+### Run the Streamlit dashboard
 ```bash
-python src/load.py
+./dashboard/run_app.sh
 ```
+Launches the interactive dashboard connected to PostgreSQL for live visualization and data exploration.
 
-### Run interactive dashboard
+---
+
+### Run backups
 ```bash
-streamlit run dashboard/app.py
+./backup/run_backup.sh
 ```
+Executes:
+- a database dump to `/backup/db/`  
+- a compressed copy of `/data/` to `/backup/data/`  
 
 ---
 
@@ -104,9 +127,9 @@ streamlit run dashboard/app.py
 ---
 
 ## Roadmap
-- Extend the dashboard with filters and sliders for live queries.  
-- Add a Jupyter storytelling notebook for portfolio presentation.  
-- Explore basic ML models (linear regression, ARIMA) for price predictions.  
+- Extend dashboard interactivity with user controls (filters, sliders).  
+- Enhance the Jupyter storytelling notebook for demonstrations and presentations.  
+- Enhance backup retention and cloud storage integration.  
 
 ---
 
@@ -117,4 +140,4 @@ streamlit run dashboard/app.py
 - `.gitignore` excludes:  
   - Virtual environment (`venv/`)  
   - Jupyter checkpoints (`.ipynb_checkpoints/`)  
-  - Database files (e.g., SQLite prototype).  
+  - Database files and backups (`/backup/db/`, `/backup/data/`).  

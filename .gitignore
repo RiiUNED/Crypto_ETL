@@ -37,3 +37,7 @@ analysis/*.csv
 
 # Jupyter
 .ipynb_checkpoints/
+
+#Backup
+/backup/db/
+/backup/data/
